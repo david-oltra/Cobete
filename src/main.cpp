@@ -6,10 +6,10 @@
 #include "bmi160.h"
 #include "bmi160_defs.h"
 #include <driver/mcpwm_prelude.h>
+#include <cmath>
 
 static TaskHandle_t _bmi160 = NULL;
 static TaskHandle_t _sg90 = NULL;
-
 
 #define BMI160_INTERFACE_I2C  BMI160_I2C_INTF
 #define BMI160_DEV_ADDR       BMI160_I2C_ADDR
@@ -18,12 +18,15 @@ struct bmi160_dev bmi160dev;
 struct bmi160_sensor_data bmi160_accel;
 struct bmi160_sensor_data bmi160_gyro;
 
-#define SERVO_MIN_PULSEWIDTH_US 400  // Minimum pulse width in microsecond
-#define SERVO_MAX_PULSEWIDTH_US 2500  // Maximum pulse width in microsecond
-#define SERVO_MIN_DEGREE        -90   // Minimum angle
-#define SERVO_MAX_DEGREE        90    // Maximum angle
+#define SERVO_X_MIN_PULSEWIDTH_US 400  // Minimum pulse width in microsecond
+#define SERVO_X_MAX_PULSEWIDTH_US 2500  // Maximum pulse width in microsecond
+#define SERVO_Y_MIN_PULSEWIDTH_US 400  // Minimum pulse width in microsecond
+#define SERVO_Y_MAX_PULSEWIDTH_US 2500  // Maximum pulse width in microsecond
+#define SERVO_MIN_DEGREE        -90   // Minimum x_angle
+#define SERVO_MAX_DEGREE        90    // Maximum x_angle
 
-#define SERVO_PULSE_GPIO             13        // GPIO connects to the PWM signal line
+#define SERVO_X_PULSE_GPIO             13        // GPIO connects to the PWM signal line
+#define SERVO_Y_PULSE_GPIO             14        // GPIO connects to the PWM signal line
 #define SERVO_TIMEBASE_RESOLUTION_HZ 1000000  // 1MHz, 1us per tick
 #define SERVO_TIMEBASE_PERIOD        20000    // 20000 ticks, 20ms
 
@@ -112,20 +115,20 @@ void init_bmi160()
     }
 
      /* Select the Output data rate, range of accelerometer sensor */
-    bmi160dev.accel_cfg.odr = BMI160_ACCEL_ODR_1600HZ;
-    bmi160dev.accel_cfg.range = BMI160_ACCEL_RANGE_4G;
-    bmi160dev.accel_cfg.bw = BMI160_ACCEL_BW_NORMAL_AVG4;
+//    bmi160dev.accel_cfg.odr = BMI160_ACCEL_ODR_1600HZ;
+//    bmi160dev.accel_cfg.range = BMI160_ACCEL_RANGE_4G;
+//    bmi160dev.accel_cfg.bw = BMI160_ACCEL_BW_NORMAL_AVG4;
 
     /* Select the power mode of accelerometer sensor */
     bmi160dev.accel_cfg.power = BMI160_ACCEL_NORMAL_MODE;
 
     /* Select the Output data rate, range of Gyroscope sensor */
-    bmi160dev.gyro_cfg.odr = BMI160_GYRO_ODR_3200HZ;
-    bmi160dev.gyro_cfg.range = BMI160_GYRO_RANGE_2000_DPS;
-    bmi160dev.gyro_cfg.bw = BMI160_GYRO_BW_NORMAL_MODE;
+//    bmi160dev.gyro_cfg.odr = BMI160_GYRO_ODR_3200HZ;
+//    bmi160dev.gyro_cfg.range = BMI160_GYRO_RANGE_2000_DPS;
+//    bmi160dev.gyro_cfg.bw = BMI160_GYRO_BW_NORMAL_MODE;
 
     /* Select the power mode of Gyroscope sensor */
-    bmi160dev.gyro_cfg.power = BMI160_GYRO_NORMAL_MODE;
+    bmi160dev.gyro_cfg.power = BMI160_GYRO_SUSPEND_MODE;
 
     /* Set the sensor configuration */
     rslt = bmi160_set_sens_conf(&bmi160dev);
@@ -159,53 +162,54 @@ void i2c_scanner()
 	vTaskDelete(NULL);
 }
 
-int bmi160_to_sg90 = 0;
+float x_deg = 0;
+float y_deg = 0;
 
 void bmi160(void *arg)
 {
-    int accel_ref = 0;
-    for (int i=0; i<10000; i++)
-        {
-            bmi160_get_sensor_data(BMI160_ACCEL_SEL, &bmi160_accel, 0, &bmi160dev);
-            fflush(stdout);
-            accel_ref = accel_ref + bmi160_accel.x;
-        }
-        accel_ref = accel_ref / 1000000;
-
     while(1)
     {
-        /* To read both Accel and Gyro data */
-        /*
-        bmi160_get_sensor_data((BMI160_ACCEL_SEL | BMI160_GYRO_SEL), &bmi160_accel, &bmi160_gyro, &bmi160dev);
-
-        printf("ax:%d\tay:%d\taz:%d\n", bmi160_accel.x, bmi160_accel.y, bmi160_accel.z);
-        printf("gx:%d\tgy:%d\tgz:%d\n", bmi160_gyro.x, bmi160_gyro.y, bmi160_gyro.z);
-        fflush(stdout);
-        */
-        int accel_avrg = 0;
+        float accel_z = 0;
+        float accel_x = 0;
+        float accel_y = 0;
         for (int i=0; i<1000; i++)
         {
             bmi160_get_sensor_data(BMI160_ACCEL_SEL, &bmi160_accel, 0, &bmi160dev);
         //    printf("ax:%d\tay:%d\taz:%d\n", bmi160_accel.x, bmi160_accel.y, bmi160_accel.z);printf("gx:%d\tgy:%d\tgz:%d\n", bmi160_gyro.x, bmi160_gyro.y, bmi160_gyro.z);
             fflush(stdout);
-            accel_avrg = accel_avrg + bmi160_accel.x;
+            accel_z = accel_z + bmi160_accel.z;
+            accel_x = accel_x + bmi160_accel.x;
+            accel_y = accel_y + bmi160_accel.y;
         }
-        accel_avrg = accel_avrg / 100000;
-        bmi160_to_sg90 = accel_ref - accel_avrg;
-//        printf("ax:%d\n",bmi160_to_sg90);
-//        vTaskDelay(pdMS_TO_TICKS(100));
+        accel_z = accel_z / 1000;
+        accel_x = accel_x / 1000;
+        accel_y = accel_y / 1000;
+        
+        printf("accel_z = %f\n",accel_z);
+        printf("accel_y = %f\n",accel_y);
+        printf("accel_x = %f\n",accel_x);
+
+        // accz = 1g * cos(θ)
+        // accx= 1g * sin(θ) * cos(φ))
+        //y_deg = acos(accel_z / 9.8);
+        float phi = -atan(accel_y/accel_x);
+        printf("phi = %f\n",phi);
+
+        y_deg = accel_z*90/16383.5;
+        printf("y_deg = %f\n",y_deg);
+
+        // accy / accx = -tan(φ)
+        x_deg = phi*180/3.141592654;
+        printf("accel_y/accel_x = %f\n",accel_y/accel_x);
+        printf("x_deg = %f\n\n",x_deg);
     }
 }
 
-static inline uint32_t angle_to_compare(int angle)
+static inline uint32_t angle_to_compare(int angle, int SERVO_MAX_PULSEWIDTH_US, int SERVO_MIN_PULSEWIDTH_US)
 {
     return (angle - SERVO_MIN_DEGREE) * (SERVO_MAX_PULSEWIDTH_US - SERVO_MIN_PULSEWIDTH_US) / (SERVO_MAX_DEGREE - SERVO_MIN_DEGREE) + SERVO_MIN_PULSEWIDTH_US;
 }
 
-void init_sg90()
-{
-
-}
 void sg90(void *arg)
 {
     ESP_LOGI(TAG, "Create timer and operator");
@@ -233,42 +237,51 @@ void sg90(void *arg)
         comparator_config.flags.update_cmp_on_tez = true;
     ESP_ERROR_CHECK(mcpwm_new_comparator(oper, &comparator_config, &comparator));
 
-    mcpwm_gen_handle_t generator = NULL;
-    mcpwm_generator_config_t generator_config;
-        generator_config.gen_gpio_num = SERVO_PULSE_GPIO;
-    ESP_ERROR_CHECK(mcpwm_new_generator(oper, &generator_config, &generator));
+    mcpwm_gen_handle_t X_generator = NULL;
+    mcpwm_generator_config_t X_generator_config;
+        X_generator_config.gen_gpio_num = SERVO_X_PULSE_GPIO;
+    ESP_ERROR_CHECK(mcpwm_new_generator(oper, &X_generator_config, &X_generator));
+
+    mcpwm_gen_handle_t Y_generator = NULL;
+    mcpwm_generator_config_t Y_generator_config;
+        Y_generator_config.gen_gpio_num = SERVO_X_PULSE_GPIO;
+    ESP_ERROR_CHECK(mcpwm_new_generator(oper, &Y_generator_config, &Y_generator));
 
     // set the initial compare value, so that the servo will spin to the center position
-    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(0)));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(0,SERVO_X_MAX_PULSEWIDTH_US, SERVO_X_MIN_PULSEWIDTH_US)));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(0,SERVO_Y_MAX_PULSEWIDTH_US, SERVO_Y_MIN_PULSEWIDTH_US)));
 
     ESP_LOGI(TAG, "Set generator action on timer and compare event");
     // go high on counter empty
-    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(generator,
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(X_generator,
                                                               MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
     // go low on compare threshold
-    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(generator,
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(X_generator,
+                                                                MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator, MCPWM_GEN_ACTION_LOW)));
+    // go high on counter empty
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(Y_generator,
+                                                              MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+    // go low on compare threshold
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(Y_generator,
                                                                 MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator, MCPWM_GEN_ACTION_LOW)));
 
     ESP_LOGI(TAG, "Enable and start timer");
     ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
 
-    int angle = 0;
-    int step = 2;
-
     while (1) {
-        if (bmi160_to_sg90>90){angle = 90;}
-        else if (bmi160_to_sg90<-90){angle = -90;}
-        else { angle = bmi160_to_sg90;}
-        ESP_LOGI(TAG, "Angle of rotation: %d", angle);
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(angle)));
+        if (x_deg>90){x_deg = 90;}
+        else if (x_deg<-90){x_deg = -90;}
+    //    ESP_LOGI(TAG, "Angle X of rotation: %d", x_deg);
+        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(x_deg, SERVO_X_MAX_PULSEWIDTH_US, SERVO_X_MIN_PULSEWIDTH_US)));
+        if (y_deg>90){y_deg = 90;}
+        else if (y_deg<-90){y_deg = -90;}
+    //    ESP_LOGI(TAG, "Angle Y of rotation: %d", y_deg);
+        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(y_deg, SERVO_Y_MAX_PULSEWIDTH_US, SERVO_Y_MIN_PULSEWIDTH_US)));
         //Add delay, since it takes time for servo to rotate, usually 200ms/60degree rotation under 5V power supply
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    while(0)
-    {
 
-    }
 }
 
 void app_main() 
