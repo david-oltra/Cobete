@@ -133,6 +133,8 @@ void init_bmi160()
     /* Set the sensor configuration */
     rslt = bmi160_set_sens_conf(&bmi160dev);
     printf("rslt: %X\n\n",rslt);
+
+    
 }
 
 void i2c_scanner()
@@ -185,22 +187,38 @@ void bmi160(void *arg)
         accel_x = accel_x / 1000;
         accel_y = accel_y / 1000;
         
-        printf("accel_z = %f\n",accel_z);
-        printf("accel_y = %f\n",accel_y);
-        printf("accel_x = %f\n",accel_x);
+//        printf("accel_z = %f\n",accel_z);
+//        printf("accel_y = %f\n",accel_y);
+//        printf("accel_x = %f\n",accel_x);
 
         // accz = 1g * cos(θ)
         // accx= 1g * sin(θ) * cos(φ))
         //y_deg = acos(accel_z / 9.8);
-        float phi = -atan(accel_y/accel_x);
-        printf("phi = %f\n",phi);
+        float phi_x = -atan(accel_y/accel_x);
+        float phi_y = -atan(accel_y/accel_z);
+//        printf("phy = %f\n",phi);
 
-        y_deg = accel_z*90/16383.5;
+        y_deg = phi_y*180/3.141592654;
+        if(y_deg >= 0)
+        {
+            y_deg = y_deg-90;
+        }
+        else
+        {
+            y_deg = y_deg+90;
+        }
         printf("y_deg = %f\n",y_deg);
 
         // accy / accx = -tan(φ)
-        x_deg = phi*180/3.141592654;
-        printf("accel_y/accel_x = %f\n",accel_y/accel_x);
+        x_deg = phi_x*180/3.141592654;
+        if(x_deg >= 0)
+        {
+            x_deg = x_deg-90;
+        }
+        else
+        {
+            x_deg = x_deg+90;
+        }
         printf("x_deg = %f\n\n",x_deg);
     }
 }
