@@ -24,6 +24,8 @@ struct bmi160_sensor_data bmi160_gyro;
 #define SERVO_Y_MAX_PULSEWIDTH_US 2500  // Maximum pulse width in microsecond
 #define SERVO_MIN_DEGREE        -90   // Minimum x_angle
 #define SERVO_MAX_DEGREE        90    // Maximum x_angle
+#define SERVO_LIMIT_X   15
+#define SERVO_LIMIT_Y   15
 
 #define SERVO_X_PULSE_GPIO             13        // GPIO connects to the PWM signal line
 #define SERVO_Y_PULSE_GPIO             14        // GPIO connects to the PWM signal line
@@ -89,54 +91,6 @@ void bmi_delay(uint32_t period)
     vTaskDelay(pdMS_TO_TICKS(period));
 }
 
-void init_bmi160()
-{
-    bmi160dev.intf = BMI160_I2C_INTF;
-    bmi160dev.id = BMI160_DEV_ADDR;
-    bmi160dev.read = (bmi160_read_fptr_t)bmi_read;
-    bmi160dev.write = (bmi160_write_fptr_t)bmi_write;
-    bmi160dev.delay_ms = (bmi160_delay_fptr_t)bmi_delay;
-
-    int16_t rslt;
-
-    rslt = bmi160_init(&bmi160dev);
-
-    printf("rslt: %X\n\n",rslt);
-
-
-    if (rslt == BMI160_OK)
-    {
-        printf("BMI160 initialization success !\n");
-        printf("Chip ID 0x%X\n", bmi160dev.chip_id);
-    }
-    else
-    {
-        printf("BMI160 initialization failure !\n");
-    }
-
-     /* Select the Output data rate, range of accelerometer sensor */
-//    bmi160dev.accel_cfg.odr = BMI160_ACCEL_ODR_1600HZ;
-//    bmi160dev.accel_cfg.range = BMI160_ACCEL_RANGE_4G;
-//    bmi160dev.accel_cfg.bw = BMI160_ACCEL_BW_NORMAL_AVG4;
-
-    /* Select the power mode of accelerometer sensor */
-    bmi160dev.accel_cfg.power = BMI160_ACCEL_NORMAL_MODE;
-
-    /* Select the Output data rate, range of Gyroscope sensor */
-//    bmi160dev.gyro_cfg.odr = BMI160_GYRO_ODR_3200HZ;
-//    bmi160dev.gyro_cfg.range = BMI160_GYRO_RANGE_2000_DPS;
-//    bmi160dev.gyro_cfg.bw = BMI160_GYRO_BW_NORMAL_MODE;
-
-    /* Select the power mode of Gyroscope sensor */
-    bmi160dev.gyro_cfg.power = BMI160_GYRO_SUSPEND_MODE;
-
-    /* Set the sensor configuration */
-    rslt = bmi160_set_sens_conf(&bmi160dev);
-    printf("rslt: %X\n\n",rslt);
-
-    
-}
-
 void i2c_scanner()
 {
         int i;
@@ -169,6 +123,48 @@ float y_deg = 0;
 
 void bmi160(void *arg)
 {
+    bmi160dev.intf = BMI160_I2C_INTF;
+    bmi160dev.id = BMI160_DEV_ADDR;
+    bmi160dev.read = (bmi160_read_fptr_t)bmi_read;
+    bmi160dev.write = (bmi160_write_fptr_t)bmi_write;
+    bmi160dev.delay_ms = (bmi160_delay_fptr_t)bmi_delay;
+
+    int16_t rslt;
+
+    rslt = bmi160_init(&bmi160dev);
+
+    printf("rslt: %X\n\n",rslt);
+
+    if (rslt == BMI160_OK)
+    {
+        printf("BMI160 initialization success !\n");
+        printf("Chip ID 0x%X\n", bmi160dev.chip_id);
+    }
+    else
+    {
+        printf("BMI160 initialization failure !\n");
+    }
+
+     /* Select the Output data rate, range of accelerometer sensor */
+//    bmi160dev.accel_cfg.odr = BMI160_ACCEL_ODR_1600HZ;
+//    bmi160dev.accel_cfg.range = BMI160_ACCEL_RANGE_4G;
+//    bmi160dev.accel_cfg.bw = BMI160_ACCEL_BW_NORMAL_AVG4;
+
+    /* Select the power mode of accelerometer sensor */
+    bmi160dev.accel_cfg.power = BMI160_ACCEL_NORMAL_MODE;
+
+    /* Select the Output data rate, range of Gyroscope sensor */
+//    bmi160dev.gyro_cfg.odr = BMI160_GYRO_ODR_3200HZ;
+//    bmi160dev.gyro_cfg.range = BMI160_GYRO_RANGE_2000_DPS;
+//    bmi160dev.gyro_cfg.bw = BMI160_GYRO_BW_NORMAL_MODE;
+
+    /* Select the power mode of Gyroscope sensor */
+    bmi160dev.gyro_cfg.power = BMI160_GYRO_SUSPEND_MODE;
+
+    /* Set the sensor configuration */
+    rslt = bmi160_set_sens_conf(&bmi160dev);
+    printf("rslt: %X\n\n",rslt);
+
     while(1)
     {
         float accel_z = 0;
@@ -196,7 +192,6 @@ void bmi160(void *arg)
         //y_deg = acos(accel_z / 9.8);
         float phi_x = -atan(accel_y/accel_x);
         float phi_y = -atan(accel_y/accel_z);
-//        printf("phy = %f\n",phi);
 
         y_deg = phi_y*180/3.141592654;
         if(y_deg >= 0)
@@ -288,24 +283,22 @@ void sg90(void *arg)
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
 
     while (1) {
-        if (x_deg>90){x_deg = 90;}
-        else if (x_deg<-90){x_deg = -90;}
+        if (x_deg>SERVO_LIMIT_X){x_deg = SERVO_LIMIT_X;}
+        else if (x_deg<-SERVO_LIMIT_X){x_deg = -SERVO_LIMIT_X;}
     //    ESP_LOGI(TAG, "Angle X of rotation: %d", x_deg);
         ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(x_deg, SERVO_X_MAX_PULSEWIDTH_US, SERVO_X_MIN_PULSEWIDTH_US)));
-        if (y_deg>90){y_deg = 90;}
-        else if (y_deg<-90){y_deg = -90;}
+        if (y_deg>SERVO_LIMIT_Y){y_deg = SERVO_LIMIT_Y;}
+        else if (y_deg<-SERVO_LIMIT_Y){y_deg = -SERVO_LIMIT_Y;}
     //    ESP_LOGI(TAG, "Angle Y of rotation: %d", y_deg);
         ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(y_deg, SERVO_Y_MAX_PULSEWIDTH_US, SERVO_Y_MIN_PULSEWIDTH_US)));
         //Add delay, since it takes time for servo to rotate, usually 200ms/60degree rotation under 5V power supply
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-
 }
 
 void app_main() 
 {
     init_i2c();
-    init_bmi160();
 
     while(0)
     {
@@ -315,5 +308,4 @@ void app_main()
     xTaskCreatePinnedToCore(bmi160, "bmi160", 4096, NULL, 9, &_bmi160, 1);    
     xTaskCreatePinnedToCore(sg90, "sg90", 4096, NULL, 10, &_sg90, 0);
     
-
 }
