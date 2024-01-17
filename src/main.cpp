@@ -18,6 +18,8 @@ struct bmi160_dev bmi160dev;
 struct bmi160_sensor_data bmi160_accel;
 struct bmi160_sensor_data bmi160_gyro;
 
+#define SENSITIVITY 500
+
 #define SERVO_X_MIN_PULSEWIDTH_US 400  // Minimum pulse width in microsecond
 #define SERVO_X_MAX_PULSEWIDTH_US 2500  // Maximum pulse width in microsecond
 #define SERVO_Y_MIN_PULSEWIDTH_US 400  // Minimum pulse width in microsecond
@@ -25,7 +27,7 @@ struct bmi160_sensor_data bmi160_gyro;
 #define SERVO_MIN_DEGREE        -90   // Minimum x_angle
 #define SERVO_MAX_DEGREE        90    // Maximum x_angle
 #define SERVO_LIMIT_X   15
-#define SERVO_LIMIT_Y   15
+#define SERVO_LIMIT_Y   30
 
 #define SERVO_X_PULSE_GPIO             13        // GPIO connects to the PWM signal line
 #define SERVO_Y_PULSE_GPIO             14        // GPIO connects to the PWM signal line
@@ -35,6 +37,23 @@ struct bmi160_sensor_data bmi160_gyro;
 static const char *TAG = "COBETE";
 
 extern "C" void app_main();
+
+void init()
+{
+    gpio_num_t pinout[3] = {GPIO_NUM_12, GPIO_NUM_26, GPIO_NUM_27};
+    for (uint8_t i=0; i<3; i++){
+        gpio_config_t io_conf = {};
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        io_conf.mode = GPIO_MODE_OUTPUT;
+        io_conf.pin_bit_mask = (1ULL << pinout[i]);
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+        gpio_config(&io_conf);
+        gpio_set_level(pinout[i],0);
+    }
+    gpio_set_level(GPIO_NUM_12,1);
+    gpio_set_level(GPIO_NUM_27,1);
+}
 
 void init_i2c()
 {
@@ -170,7 +189,7 @@ void bmi160(void *arg)
         float accel_z = 0;
         float accel_x = 0;
         float accel_y = 0;
-        for (int i=0; i<1000; i++)
+        for (int i=0; i<SENSITIVITY; i++)
         {
             bmi160_get_sensor_data(BMI160_ACCEL_SEL, &bmi160_accel, 0, &bmi160dev);
         //    printf("ax:%d\tay:%d\taz:%d\n", bmi160_accel.x, bmi160_accel.y, bmi160_accel.z);printf("gx:%d\tgy:%d\tgz:%d\n", bmi160_gyro.x, bmi160_gyro.y, bmi160_gyro.z);
@@ -179,9 +198,9 @@ void bmi160(void *arg)
             accel_x = accel_x + bmi160_accel.x;
             accel_y = accel_y + bmi160_accel.y;
         }
-        accel_z = accel_z / 1000;
-        accel_x = accel_x / 1000;
-        accel_y = accel_y / 1000;
+        accel_z = accel_z / SENSITIVITY;
+        accel_x = accel_x / SENSITIVITY;
+        accel_y = accel_y / SENSITIVITY;
         
 //        printf("accel_z = %f\n",accel_z);
 //        printf("accel_y = %f\n",accel_y);
@@ -226,43 +245,40 @@ static inline uint32_t angle_to_compare(int angle, int SERVO_MAX_PULSEWIDTH_US, 
 void sg90(void *arg)
 {
     ESP_LOGI(TAG, "Create timer and operator");
-    mcpwm_timer_handle_t timer = NULL;
-    mcpwm_timer_config_t timer_config;
-        timer_config.group_id = 0;
-        timer_config.clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT;
-        timer_config.resolution_hz = SERVO_TIMEBASE_RESOLUTION_HZ;
-        timer_config.count_mode = MCPWM_TIMER_COUNT_MODE_UP;
-        timer_config.period_ticks = SERVO_TIMEBASE_PERIOD;
-        
-    ESP_ERROR_CHECK(mcpwm_new_timer(&timer_config, &timer));
+    mcpwm_timer_handle_t X_timer = NULL;
+    mcpwm_timer_config_t X_timer_config;
+        X_timer_config.group_id = 0;
+        X_timer_config.clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT;
+        X_timer_config.resolution_hz = SERVO_TIMEBASE_RESOLUTION_HZ;
+        X_timer_config.period_ticks = SERVO_TIMEBASE_PERIOD;
+        X_timer_config.count_mode = MCPWM_TIMER_COUNT_MODE_UP;
+    
+    ESP_ERROR_CHECK(mcpwm_new_timer(&X_timer_config, &X_timer));
 
-    mcpwm_oper_handle_t oper = NULL;
-    mcpwm_operator_config_t operator_config;
-        operator_config.group_id = 0; // operator must be in the same group to the timer
-    ESP_ERROR_CHECK(mcpwm_new_operator(&operator_config, &oper));
+    mcpwm_oper_handle_t X_oper = NULL;
+    mcpwm_operator_config_t X_operator_config;
+        X_operator_config.group_id = 0; // operator must be in the same group to the timer
+    
+    ESP_ERROR_CHECK(mcpwm_new_operator(&X_operator_config, &X_oper));
 
     ESP_LOGI(TAG, "Connect timer and operator");
-    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(oper, timer));
+    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(X_oper, X_timer));
 
     ESP_LOGI(TAG, "Create comparator and generator from the operator");
-    mcpwm_cmpr_handle_t comparator = NULL;
-    mcpwm_comparator_config_t comparator_config ;
-        comparator_config.flags.update_cmp_on_tez = true;
-    ESP_ERROR_CHECK(mcpwm_new_comparator(oper, &comparator_config, &comparator));
+    mcpwm_cmpr_handle_t X_comparator = NULL;
+    mcpwm_comparator_config_t X_comparator_config;
+        X_comparator_config.flags.update_cmp_on_tez = true;
+    
+    ESP_ERROR_CHECK(mcpwm_new_comparator(X_oper, &X_comparator_config, &X_comparator));
 
     mcpwm_gen_handle_t X_generator = NULL;
     mcpwm_generator_config_t X_generator_config;
         X_generator_config.gen_gpio_num = SERVO_X_PULSE_GPIO;
-    ESP_ERROR_CHECK(mcpwm_new_generator(oper, &X_generator_config, &X_generator));
-
-    mcpwm_gen_handle_t Y_generator = NULL;
-    mcpwm_generator_config_t Y_generator_config;
-        Y_generator_config.gen_gpio_num = SERVO_X_PULSE_GPIO;
-    ESP_ERROR_CHECK(mcpwm_new_generator(oper, &Y_generator_config, &Y_generator));
+    
+    ESP_ERROR_CHECK(mcpwm_new_generator(X_oper, &X_generator_config, &X_generator));
 
     // set the initial compare value, so that the servo will spin to the center position
-    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(0,SERVO_X_MAX_PULSEWIDTH_US, SERVO_X_MIN_PULSEWIDTH_US)));
-    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(0,SERVO_Y_MAX_PULSEWIDTH_US, SERVO_Y_MIN_PULSEWIDTH_US)));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(X_comparator, angle_to_compare(0, SERVO_X_MAX_PULSEWIDTH_US, SERVO_X_MIN_PULSEWIDTH_US)));
 
     ESP_LOGI(TAG, "Set generator action on timer and compare event");
     // go high on counter empty
@@ -270,27 +286,68 @@ void sg90(void *arg)
                                                               MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
     // go low on compare threshold
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(X_generator,
-                                                                MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator, MCPWM_GEN_ACTION_LOW)));
+                                                                MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, X_comparator, MCPWM_GEN_ACTION_LOW)));
+
+    ESP_LOGI(TAG, "Enable and start timer");
+    ESP_ERROR_CHECK(mcpwm_timer_enable(X_timer));
+    ESP_ERROR_CHECK(mcpwm_timer_start_stop(X_timer, MCPWM_TIMER_START_NO_STOP));
+
+
+    ESP_LOGI(TAG, "Create timer and operator");
+    mcpwm_timer_handle_t Y_timer = NULL;
+    mcpwm_timer_config_t Y_timer_config;
+        Y_timer_config.group_id = 1;
+        Y_timer_config.clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT;
+        Y_timer_config.resolution_hz = SERVO_TIMEBASE_RESOLUTION_HZ;
+        Y_timer_config.period_ticks = SERVO_TIMEBASE_PERIOD;
+        Y_timer_config.count_mode = MCPWM_TIMER_COUNT_MODE_UP;
+    
+    ESP_ERROR_CHECK(mcpwm_new_timer(&Y_timer_config, &Y_timer));
+
+    mcpwm_oper_handle_t Y_oper = NULL;
+    mcpwm_operator_config_t Y_operator_config;
+        Y_operator_config.group_id = 1; // operator must be in the same group to the timer
+    
+    ESP_ERROR_CHECK(mcpwm_new_operator(&Y_operator_config, &Y_oper));
+
+    ESP_LOGI(TAG, "Connect timer and operator");
+    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(Y_oper, Y_timer));
+
+    ESP_LOGI(TAG, "Create comparator and generator from the operator");
+    mcpwm_cmpr_handle_t Y_comparator = NULL;
+    mcpwm_comparator_config_t Y_comparator_config;
+        Y_comparator_config.flags.update_cmp_on_tez = true;
+    
+    ESP_ERROR_CHECK(mcpwm_new_comparator(Y_oper, &Y_comparator_config, &Y_comparator));
+
+    mcpwm_gen_handle_t Y_generator = NULL;
+    mcpwm_generator_config_t Y_generator_config;
+        Y_generator_config.gen_gpio_num = SERVO_Y_PULSE_GPIO;
+    
+    ESP_ERROR_CHECK(mcpwm_new_generator(Y_oper, &Y_generator_config, &Y_generator));
+
+    // set the initial compare value, so that the servo will spin to the center position
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(Y_comparator, angle_to_compare(0, SERVO_Y_MAX_PULSEWIDTH_US, SERVO_Y_MIN_PULSEWIDTH_US)));
+
+    ESP_LOGI(TAG, "Set generator action on timer and compare event");
     // go high on counter empty
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(Y_generator,
                                                               MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
     // go low on compare threshold
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(Y_generator,
-                                                                MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator, MCPWM_GEN_ACTION_LOW)));
+                                                                MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, Y_comparator, MCPWM_GEN_ACTION_LOW)));
 
     ESP_LOGI(TAG, "Enable and start timer");
-    ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
-    ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
+    ESP_ERROR_CHECK(mcpwm_timer_enable(Y_timer));
+    ESP_ERROR_CHECK(mcpwm_timer_start_stop(Y_timer, MCPWM_TIMER_START_NO_STOP));
 
     while (1) {
         if (x_deg>SERVO_LIMIT_X){x_deg = SERVO_LIMIT_X;}
         else if (x_deg<-SERVO_LIMIT_X){x_deg = -SERVO_LIMIT_X;}
-    //    ESP_LOGI(TAG, "Angle X of rotation: %d", x_deg);
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(x_deg, SERVO_X_MAX_PULSEWIDTH_US, SERVO_X_MIN_PULSEWIDTH_US)));
+        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(X_comparator, angle_to_compare(x_deg, SERVO_X_MAX_PULSEWIDTH_US, SERVO_X_MIN_PULSEWIDTH_US)));
         if (y_deg>SERVO_LIMIT_Y){y_deg = SERVO_LIMIT_Y;}
         else if (y_deg<-SERVO_LIMIT_Y){y_deg = -SERVO_LIMIT_Y;}
-    //    ESP_LOGI(TAG, "Angle Y of rotation: %d", y_deg);
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparator, angle_to_compare(y_deg, SERVO_Y_MAX_PULSEWIDTH_US, SERVO_Y_MIN_PULSEWIDTH_US)));
+        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(Y_comparator, angle_to_compare(y_deg, SERVO_Y_MAX_PULSEWIDTH_US, SERVO_Y_MIN_PULSEWIDTH_US)));
         //Add delay, since it takes time for servo to rotate, usually 200ms/60degree rotation under 5V power supply
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -298,6 +355,7 @@ void sg90(void *arg)
 
 void app_main() 
 {
+    init();
     init_i2c();
 
     while(0)
